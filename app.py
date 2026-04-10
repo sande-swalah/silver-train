@@ -1,8 +1,9 @@
 from flask import Flask, jsonify, request
+
 from flask_sqlalchemy import SQLAlchemy
 
 from flask_marshmallow import Marshmallow
-from marshmallow import fields, validate
+from marshmallow import fields, validate, ValidationError
 
 from datetime import datetime
 
@@ -61,6 +62,11 @@ class AuthorSchema(seriliazer.SQLAlchemyAutoSchema):
         validate=validate.Length(min=1, max=100)
     )
 
+    bio = fields.Str(
+        required = True,
+        validate=validate.Length(min=1, max=100)
+    )
+
     books = fields.List(
         fields.Nested(lambda: BookSchema(exclude=("author",))),
         dump_only = True # read_only(you cannot set the books)
@@ -93,6 +99,62 @@ class BookSchema(seriliazer.SQLAlchemyAutoSchema):
         dump_only=True
     )
 
+# intatnsiate the schemas
+author_schema = AuthorSchema()
+list_of_authors = AuthorSchema(many=True)
+
+########################################################################
+# Endpoints
+
+@app.route("/api/authors", methods=["GET"])
+def get_all_authors():
+    return jsonify(list_of_authors.dump(Author.query.all())), 200
+
+
+@app.route("/api/authors/<int:author_id>", methods=["GET"])
+def get_one_author(author_id):
+    return jsonify(author_schema.dump(db.get_or_404(Author, author_id))), 200
+
+@app.route("/api/authors", methods=["POST"])
+def create_an_author():
+    try:
+        new_data = author_schema.load(
+            request.json
+        )
+    except ValidationError as err:
+        return jsonify({
+            "error": err.messages
+        }), 422
+    
+    db.session.add(new_data)
+    db.session.commit()
+
+    return jsonify(author_schema.dump(new_data)), 201
+
+@app.route("/api/authors/<int:author_id>", methods=["PATCH"])
+def update_author(author_id):
+    author = db.get_or_404(author_id)
+    try:
+        update_record = author_schema.load(
+        request.json,
+        instance=author,
+        partial=True
+    )
+    except ValidationError as err:
+        return jsonify({
+            "error": err
+        }), 422
+    
+    db.session.commit()
+
+    return jsonify(author_schema.dump(update_author)), 200
+
+@app.route("/api/authors/<int:author_id>", methods=["DELETE"])
+def delete_author(author_id):
+    author = db.get_or_404(Author, author_id)
+    db.session.delete(author)
+    db.session.commit()
+    return "", 204
 
 # RUN
 
